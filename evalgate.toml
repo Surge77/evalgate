@@ -1,0 +1,17 @@
+# evalgate CI gate thresholds. All scores are on the harness-wide 0-1 scale.
+
+[gate]
+baseline = "evalgate.baseline.json"
+
+# Fail the gate if a metric drops more than this vs the promoted baseline.
+[gate.max_drop]
+accuracy = 0.05
+faithfulness = 0.05
+
+# Fail the gate if a metric is below this floor (works without a baseline).
+[gate.min]
+accuracy = 0.80
+
+# Warn (never fail) if a metric rises more than this percent vs baseline.
+[gate.warn_increase_pct]
+total_cost_usd = 20.0
