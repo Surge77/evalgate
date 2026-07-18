@@ -129,3 +129,63 @@ def test_run_uses_cache_between_invocations(tmp_path: Path) -> None:
         )
         assert exit_code == 0
     assert (tmp_path / "cache.db").exists()
+
+
+def do_run(tmp_path: Path) -> None:
+    exit_code, output = run_cli(
+        "run",
+        "--target", "tests.targets:golden_parrot",
+        "--dataset", SAMPLE,
+        "--artifacts-dir", str(tmp_path),
+        "--no-cache",
+    )
+    assert exit_code == 0, output
+
+
+def test_report_renders_latest_run_rich(tmp_path: Path) -> None:
+    do_run(tmp_path)
+    exit_code, output = run_cli(
+        "report", "--artifacts-dir", str(tmp_path),
+        "--baseline", str(tmp_path / "no-baseline.json"),
+    )
+    assert exit_code == 0
+    assert "accuracy" in output
+
+
+def test_report_markdown_written_to_file(tmp_path: Path) -> None:
+    do_run(tmp_path)
+    out = tmp_path / "report.md"
+    exit_code, _ = run_cli(
+        "report", "--artifacts-dir", str(tmp_path),
+        "--format", "md", "--output", str(out),
+        "--baseline", str(tmp_path / "no-baseline.json"),
+    )
+    assert exit_code == 0
+    assert "| accuracy | 1.0000 |" in out.read_text(encoding="utf-8")
+
+
+def test_report_unknown_run_exits_2(tmp_path: Path) -> None:
+    do_run(tmp_path)
+    exit_code, output = run_cli(
+        "report", "--artifacts-dir", str(tmp_path), "--run-id", "nope",
+    )
+    assert exit_code == 2
+    assert "run not found" in output
+
+
+def test_baseline_promote_then_report_shows_delta(tmp_path: Path) -> None:
+    do_run(tmp_path)
+    baseline_path = tmp_path / "baseline.json"
+    exit_code, output = run_cli(
+        "baseline", "promote",
+        "--artifacts-dir", str(tmp_path), "--baseline", str(baseline_path),
+    )
+    assert exit_code == 0, output
+    assert baseline_path.exists()
+
+    exit_code, output = run_cli(
+        "report", "--artifacts-dir", str(tmp_path),
+        "--format", "md", "--baseline", str(baseline_path),
+    )
+    assert exit_code == 0
+    assert "+0.0000" in output

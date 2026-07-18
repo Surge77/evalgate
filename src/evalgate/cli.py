@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import uuid
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
@@ -16,14 +17,31 @@ from evalgate.adapters.callable import CallableAdapter
 from evalgate.cache import ResponseCache
 from evalgate.loader import DatasetError, load_dataset
 from evalgate.providers import AnthropicProvider, Provider
-from evalgate.report import aggregate_metrics
+from evalgate.report import (
+    aggregate_metrics,
+    baseline_diff,
+    render_html,
+    render_markdown,
+)
 from evalgate.runner import run_cases
-from evalgate.schemas import Case, RunReport
+from evalgate.schemas import Baseline, Case, RunReport
 from evalgate.scorers.judge import judge_all
 from evalgate.scorers.rules import score_case
+from evalgate.store import RunStore, load_baseline, promote_baseline
+
+DEFAULT_ARTIFACTS = Path("artifacts")
+DEFAULT_BASELINE = Path("evalgate.baseline.json")
 
 app = typer.Typer(no_args_is_help=True)
+baseline_app = typer.Typer(no_args_is_help=True, help="Baseline management")
+app.add_typer(baseline_app, name="baseline")
 console = Console()
+
+
+class ReportFormat(str, Enum):
+    RICH = "rich"
+    MD = "md"
+    HTML = "html"
 
 
 @app.command()
@@ -41,7 +59,7 @@ def run(
     ] = Path("datasets/golden/sample.jsonl"),
     artifacts_dir: Annotated[
         Path, typer.Option(help="Where run reports and cache live")
-    ] = Path("artifacts"),
+    ] = DEFAULT_ARTIFACTS,
     concurrency: Annotated[int, typer.Option(min=1)] = 4,
     limit: Annotated[
         int | None, typer.Option(min=1, help="Run only the first N cases")
@@ -77,9 +95,68 @@ def run(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     report_path = artifacts_dir / f"{report.run_id}.json"
     report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    with RunStore(artifacts_dir / "runs.db") as store:
+        store.save(report)
 
     _print_summary(report)
     console.print(f"report written to [bold]{report_path}[/bold]")
+
+
+def _load_run(artifacts_dir: Path, run_id: str | None) -> RunReport:
+    with RunStore(artifacts_dir / "runs.db") as store:
+        report = store.latest() if run_id is None else store.get(run_id)
+    if report is None:
+        which = run_id or "latest"
+        console.print(f"[red]run not found:[/red] {which}")
+        raise typer.Exit(2)
+    return report
+
+
+@app.command()
+def report(
+    run_id: Annotated[
+        str | None, typer.Option(help="Run to render (default: latest)")
+    ] = None,
+    artifacts_dir: Annotated[Path, typer.Option()] = DEFAULT_ARTIFACTS,
+    fmt: Annotated[ReportFormat, typer.Option("--format")] = ReportFormat.RICH,
+    output: Annotated[
+        Path | None, typer.Option(help="Write to file instead of stdout")
+    ] = None,
+    baseline_path: Annotated[Path, typer.Option("--baseline")] = DEFAULT_BASELINE,
+) -> None:
+    """Render a stored run as rich terminal output, markdown, or html."""
+    run_report = _load_run(artifacts_dir, run_id)
+    baseline = load_baseline(baseline_path)
+
+    if fmt is ReportFormat.RICH:
+        _print_summary(run_report, baseline)
+        return
+    rendered = (
+        render_markdown(run_report, baseline)
+        if fmt is ReportFormat.MD
+        else render_html(run_report, baseline)
+    )
+    if output is None:
+        console.print(rendered, markup=False)
+    else:
+        output.write_text(rendered, encoding="utf-8")
+        console.print(f"report written to [bold]{output}[/bold]")
+
+
+@baseline_app.command("promote")
+def baseline_promote(
+    run_id: Annotated[
+        str | None, typer.Argument(help="Run to promote (default: latest)")
+    ] = None,
+    artifacts_dir: Annotated[Path, typer.Option()] = DEFAULT_ARTIFACTS,
+    baseline_path: Annotated[Path, typer.Option("--baseline")] = DEFAULT_BASELINE,
+) -> None:
+    """Promote a run's metrics to the repo baseline JSON."""
+    run_report = _load_run(artifacts_dir, run_id)
+    baseline = promote_baseline(run_report, baseline_path)
+    console.print(
+        f"baseline [bold]{baseline.run_id}[/bold] written to {baseline_path}"
+    )
 
 
 def _load_judge_provider(spec: str | None) -> Provider | None:
@@ -143,12 +220,18 @@ def _execute(
     )
 
 
-def _print_summary(report: RunReport) -> None:
+def _print_summary(report: RunReport, baseline: Baseline | None = None) -> None:
+    diff = baseline_diff(report.metrics, baseline) if baseline else {}
     table = Table(title=f"evalgate run {report.run_id}")
     table.add_column("metric")
     table.add_column("value", justify="right")
+    if baseline:
+        table.add_column("vs baseline", justify="right")
     for name, value in sorted(report.metrics.items()):
-        table.add_row(name, f"{value:.4f}")
+        row = [name, f"{value:.4f}"]
+        if baseline:
+            row.append(f"{diff[name]:+.4f}" if name in diff else "")
+        table.add_row(*row)
     console.print(table)
     failed = [score for score in report.scores if score.passed is False]
     for score in failed:
