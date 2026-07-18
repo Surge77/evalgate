@@ -19,3 +19,8 @@ jobs:
         with:
           version: 1.1.411
       - run: pytest
+      - name: eval regression gate
+        run: |
+          pip install -e .
+          python -m evalgate.cli run --target examples.demo_target:answer --dataset datasets/golden/golden_v1.jsonl --no-cache
+          python -m evalgate.cli gate

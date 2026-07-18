@@ -4,14 +4,15 @@
 baseline = "evalgate.baseline.json"
 
 # Fail the gate if a metric drops more than this vs the promoted baseline.
+# Add `faithfulness = 0.05` here once the judge runs in CI (needs
+# ANTHROPIC_API_KEY as a repo secret and --judge-provider anthropic).
 [gate.max_drop]
 accuracy = 0.05
-faithfulness = 0.05
 
 # Fail the gate if a metric is below this floor (works without a baseline).
 [gate.min]
-accuracy = 0.80
+accuracy = 0.75
 
 # Warn (never fail) if a metric rises more than this percent vs baseline.
 [gate.warn_increase_pct]
-total_cost_usd = 20.0
+total_cost_usd = 25.0

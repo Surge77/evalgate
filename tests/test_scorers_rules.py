@@ -40,6 +40,8 @@ def single(case: Case, result: AgentResult) -> tuple[bool | None, str]:
         ),
         ({"type": "numeric_tolerance", "value": "23.9"}, "Total: 25", False),
         ({"type": "numeric_tolerance", "value": "23.9"}, "no numbers here", False),
+        ({"type": "numeric_tolerance", "value": "40"}, "480 divided by 12 is 40.", True),
+        ({"type": "numeric_tolerance", "value": "14"}, "3.5 times 4 equals 12.", False),
         ({"type": "tool_sequence", "value": "search, fetch"}, "", False),
         ({"type": "json_schema", "value": "{\"type\": \"object\"}"}, "{}", True),
         ({"type": "json_schema", "value": "{\"type\": \"object\"}"}, "not json", False),

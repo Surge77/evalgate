@@ -50,13 +50,14 @@ def _check_regex(check: Check, result: AgentResult) -> tuple[bool, str]:
 def _check_numeric_tolerance(check: Check, result: AgentResult) -> tuple[bool, str]:
     expected = float(check.value)
     tolerance = check.tolerance or 0.0
-    match = _NUMBER_RE.search(result.output)
-    if match is None:
+    numbers = [float(match) for match in _NUMBER_RE.findall(result.output)]
+    if not numbers:
         return False, "no number found in output"
-    actual = float(match.group())
-    if abs(actual - expected) <= tolerance:
+    # Free-text answers repeat operands ("480 / 12 is 40"), so any number
+    # within tolerance passes — position in the sentence is not meaningful.
+    if any(abs(actual - expected) <= tolerance for actual in numbers):
         return True, ""
-    return False, f"expected {expected} ± {tolerance}, got {actual}"
+    return False, f"expected {expected} ± {tolerance}, got {numbers}"
 
 
 def _check_tool_sequence(check: Check, result: AgentResult) -> tuple[bool, str]:

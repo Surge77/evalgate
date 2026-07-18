@@ -243,6 +243,68 @@ def test_gate_missing_config_exits_2(tmp_path: Path) -> None:
     assert "gate config error" in output
 
 
+def do_judged_run(tmp_path: Path) -> None:
+    exit_code, output = run_cli(
+        "run",
+        "--target", "tests.targets:golden_parrot",
+        "--dataset", SAMPLE,
+        "--artifacts-dir", str(tmp_path),
+        "--judge-provider", "tests.judge_stub:provider",
+        "--no-cache",
+    )
+    assert exit_code == 0, output
+
+
+def write_labels(path: Path, rows: list[dict[str, object]]) -> Path:
+    path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8"
+    )
+    return path
+
+
+def test_calibrate_reports_full_agreement(tmp_path: Path) -> None:
+    do_judged_run(tmp_path)
+    labels = write_labels(
+        tmp_path / "labels.jsonl",
+        [
+            {"case_id": "case-001", "faithfulness": 5, "correctness": 5, "relevance": 5},
+            {"case_id": "case-002", "faithfulness": 5, "correctness": 4, "relevance": 5},
+        ],
+    )
+    exit_code, output = run_cli(
+        "calibrate", str(labels), "--artifacts-dir", str(tmp_path),
+    )
+    assert exit_code == 0, output
+    assert "judge-human agreement: 100.0%" in output
+    assert "over 6 labels" in output
+
+
+def test_calibrate_detects_disagreement(tmp_path: Path) -> None:
+    do_judged_run(tmp_path)  # stub judge scores everything 5
+    labels = write_labels(
+        tmp_path / "labels.jsonl",
+        [{"case_id": "case-001", "faithfulness": 1, "correctness": 1, "relevance": 5}],
+    )
+    exit_code, output = run_cli(
+        "calibrate", str(labels), "--artifacts-dir", str(tmp_path),
+    )
+    assert exit_code == 0
+    assert "33.3%" in output
+
+
+def test_calibrate_without_judge_scores_exits_2(tmp_path: Path) -> None:
+    do_run(tmp_path)  # no judge
+    labels = write_labels(
+        tmp_path / "labels.jsonl",
+        [{"case_id": "case-001", "faithfulness": 5, "correctness": 5, "relevance": 5}],
+    )
+    exit_code, output = run_cli(
+        "calibrate", str(labels), "--artifacts-dir", str(tmp_path),
+    )
+    assert exit_code == 2
+    assert "calibration error" in output
+
+
 def test_baseline_promote_then_report_shows_delta(tmp_path: Path) -> None:
     do_run(tmp_path)
     baseline_path = tmp_path / "baseline.json"

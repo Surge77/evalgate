@@ -77,6 +77,11 @@ def normalize_score(score: int) -> float:
     return (score - MIN_JUDGE_SCORE) / (MAX_JUDGE_SCORE - MIN_JUDGE_SCORE)
 
 
+def denormalize_score(value: float) -> int:
+    """Inverse of normalize_score — recover the 1-5 judge scale."""
+    return round(value * (MAX_JUDGE_SCORE - MIN_JUDGE_SCORE)) + MIN_JUDGE_SCORE
+
+
 def _scores_from_judgment(
     case_id: str, judgment: dict[str, tuple[int, str]]
 ) -> list[Score]:

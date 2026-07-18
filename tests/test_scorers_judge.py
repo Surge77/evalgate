@@ -10,6 +10,7 @@ from evalgate.scorers.judge import (
     JudgeError,
     agreement_rate,
     build_user_prompt,
+    denormalize_score,
     judge_all,
     judge_case,
     normalize_score,
@@ -73,6 +74,11 @@ def test_normalize_maps_1_to_5_onto_0_to_1() -> None:
     assert normalize_score(1) == 0.0
     assert normalize_score(3) == 0.5
     assert normalize_score(5) == 1.0
+
+
+def test_denormalize_round_trips_every_judge_score() -> None:
+    for raw in range(1, 6):
+        assert denormalize_score(normalize_score(raw)) == raw
 
 
 def test_user_prompt_contains_all_sections() -> None:

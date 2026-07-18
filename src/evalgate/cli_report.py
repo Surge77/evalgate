@@ -1,5 +1,6 @@
-"""CLI commands for inspecting runs: report, baseline promote, gate."""
+"""CLI commands for inspecting runs: report, baseline promote, gate, calibrate."""
 
+import json
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
@@ -11,7 +12,10 @@ from rich.table import Table
 from evalgate.gate import GateError, evaluate_gate, format_for_ci, load_gate_config
 from evalgate.report import baseline_diff, render_html, render_markdown
 from evalgate.schemas import Baseline, RunReport
+from evalgate.scorers.judge import DIMENSIONS, agreement_rate, denormalize_score
 from evalgate.store import RunStore, load_baseline, promote_baseline
+
+PERCENT = 100.0
 
 DEFAULT_ARTIFACTS = Path("artifacts")
 DEFAULT_BASELINE = Path("evalgate.baseline.json")
@@ -99,6 +103,53 @@ def baseline_promote(
     baseline = promote_baseline(run_report, baseline_path)
     console.print(
         f"baseline [bold]{baseline.run_id}[/bold] written to {baseline_path}"
+    )
+
+
+def calibrate(
+    labels: Annotated[
+        Path, typer.Argument(help="JSONL: {case_id, faithfulness, correctness, relevance}")
+    ],
+    run_id: Annotated[
+        str | None, typer.Option(help="Run with judge scores (default: latest)")
+    ] = None,
+    artifacts_dir: Annotated[Path, typer.Option()] = DEFAULT_ARTIFACTS,
+    tolerance: Annotated[
+        int, typer.Option(min=0, help="Max 1-5 point gap that still counts as agreement")
+    ] = 1,
+) -> None:
+    """Report judge-human agreement on a hand-labeled subset."""
+    run_report = load_run(artifacts_dir, run_id)
+    judge_scores = {
+        (score.case_id, score.scorer.removeprefix("judge:")):
+            denormalize_score(score.value)
+        for score in run_report.scores
+        if score.scorer.startswith("judge:")
+    }
+    human_scores: dict[tuple[str, str], int] = {}
+    for line in labels.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        for dimension in DIMENSIONS:
+            human_scores[(str(row["case_id"]), dimension)] = int(row[dimension])
+
+    try:
+        overall = agreement_rate(judge_scores, human_scores, tolerance)
+    except ValueError as exc:
+        console.print(f"[red]calibration error:[/red] {exc}")
+        raise typer.Exit(2) from exc
+
+    for dimension in DIMENSIONS:
+        judge_dim = {k: v for k, v in judge_scores.items() if k[1] == dimension}
+        human_dim = {k: v for k, v in human_scores.items() if k[1] == dimension}
+        if judge_dim.keys() & human_dim.keys():
+            rate = agreement_rate(judge_dim, human_dim, tolerance)
+            console.print(f"{dimension}: {rate * PERCENT:.1f}%")
+    labeled = len(judge_scores.keys() & human_scores.keys())
+    console.print(
+        f"[bold]judge-human agreement: {overall * PERCENT:.1f}%[/bold] "
+        f"over {labeled} labels (tolerance ±{tolerance})"
     )
 
 

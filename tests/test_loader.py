@@ -24,6 +24,14 @@ def test_loads_repo_sample_dataset() -> None:
     assert cases[0].checks[0].type.value == "contains"
 
 
+def test_golden_v1_has_60_cases_across_5_categories() -> None:
+    cases = load_dataset(Path("datasets/golden/golden_v1.jsonl"))
+    assert len(cases) == 60
+    categories = {case.category for case in cases}
+    assert categories == {"qa", "extraction", "math", "classification", "tool_plan"}
+    assert all(case.checks for case in cases), "every golden case needs a rule check"
+
+
 def test_skips_blank_lines(tmp_path: Path) -> None:
     dataset = write_lines(tmp_path / "d.jsonl", [VALID_LINE, "", "   "])
     assert len(load_dataset(dataset)) == 1

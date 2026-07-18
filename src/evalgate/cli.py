@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from dotenv import load_dotenv
 
 from evalgate import __version__, cli_report
 from evalgate.adapters.base import Adapter
@@ -24,9 +25,12 @@ from evalgate.scorers.judge import judge_all
 from evalgate.scorers.rules import score_case
 from evalgate.store import RunStore
 
+load_dotenv()  # ANTHROPIC_API_KEY for the live judge
+
 app = typer.Typer(no_args_is_help=True)
 app.command()(cli_report.report)
 app.command()(cli_report.gate)
+app.command()(cli_report.calibrate)
 app.add_typer(cli_report.baseline_app, name="baseline")
 
 

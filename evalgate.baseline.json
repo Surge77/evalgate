@@ -1,0 +1,10 @@
+{
+  "run_id": "20260718-194236-b55fcf",
+  "promoted_at": "2026-07-18T19:42:37.604914Z",
+  "metrics": {
+    "accuracy": 0.8666666666666667,
+    "error_rate": 0.0,
+    "mean_latency_ms": 0.0024549997760914266,
+    "total_cost_usd": 0.0
+  }
+}
