@@ -86,6 +86,39 @@ def test_run_bad_target_spec_exits_2(tmp_path: Path) -> None:
     assert "target error" in output
 
 
+def test_run_with_stub_judge_adds_judge_metrics(tmp_path: Path) -> None:
+    exit_code, output = run_cli(
+        "run",
+        "--target", "tests.targets:golden_parrot",
+        "--dataset", SAMPLE,
+        "--artifacts-dir", str(tmp_path),
+        "--judge-provider", "tests.judge_stub:provider",
+        "--no-cache",
+    )
+    assert exit_code == 0, output
+    report = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert report["metrics"]["faithfulness"] == 1.0
+    assert report["metrics"]["correctness"] == 1.0
+    assert report["metrics"]["relevance"] == 1.0
+    assert report["metrics"]["judge_cost_usd"] > 0
+    judge_scores = [
+        score for score in report["scores"] if score["scorer"].startswith("judge:")
+    ]
+    assert len(judge_scores) == 6
+
+
+def test_run_bad_judge_spec_exits_2(tmp_path: Path) -> None:
+    exit_code, output = run_cli(
+        "run",
+        "--target", "tests.targets:golden_parrot",
+        "--dataset", SAMPLE,
+        "--artifacts-dir", str(tmp_path),
+        "--judge-provider", "tests.targets:echo_question",
+    )
+    assert exit_code == 2
+    assert "target error" in output
+
+
 def test_run_uses_cache_between_invocations(tmp_path: Path) -> None:
     for _ in range(2):
         exit_code, _ = run_cli(

@@ -1,6 +1,7 @@
 """Typer CLI: run (more commands land in later milestones)."""
 
 import asyncio
+import importlib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,9 +15,11 @@ from evalgate import __version__
 from evalgate.adapters.callable import CallableAdapter
 from evalgate.cache import ResponseCache
 from evalgate.loader import DatasetError, load_dataset
+from evalgate.providers import AnthropicProvider, Provider
 from evalgate.report import aggregate_metrics
 from evalgate.runner import run_cases
 from evalgate.schemas import Case, RunReport
+from evalgate.scorers.judge import judge_all
 from evalgate.scorers.rules import score_case
 
 app = typer.Typer(no_args_is_help=True)
@@ -44,6 +47,12 @@ def run(
         int | None, typer.Option(min=1, help="Run only the first N cases")
     ] = None,
     no_cache: Annotated[bool, typer.Option("--no-cache")] = False,
+    judge_provider: Annotated[
+        str | None,
+        typer.Option(
+            help="LLM judge: 'anthropic' or a 'module:attr' Provider spec"
+        ),
+    ] = None,
 ) -> None:
     """Run the dataset through a target and score it with rule checks."""
     try:
@@ -56,11 +65,14 @@ def run(
 
     try:
         adapter = CallableAdapter.from_spec(target)
+        judge = _load_judge_provider(judge_provider)
     except (ValueError, ImportError, AttributeError) as exc:
         console.print(f"[red]target error:[/red] {exc}")
         raise typer.Exit(2) from exc
 
-    report = _execute(cases, adapter, dataset, artifacts_dir, concurrency, no_cache)
+    report = _execute(
+        cases, adapter, judge, dataset, artifacts_dir, concurrency, no_cache
+    )
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     report_path = artifacts_dir / f"{report.run_id}.json"
@@ -70,9 +82,24 @@ def run(
     console.print(f"report written to [bold]{report_path}[/bold]")
 
 
+def _load_judge_provider(spec: str | None) -> Provider | None:
+    if spec is None:
+        return None
+    if spec == "anthropic":
+        return AnthropicProvider()
+    module_path, _, attr = spec.partition(":")
+    if not module_path or not attr:
+        raise ValueError(f"invalid judge provider spec {spec!r}, expected 'module:attr'")
+    candidate: object = getattr(importlib.import_module(module_path), attr)
+    if not isinstance(candidate, Provider):
+        raise ValueError(f"judge provider {spec!r} does not implement Provider")
+    return candidate
+
+
 def _execute(
     cases: list[Case],
     adapter: CallableAdapter,
+    judge: Provider | None,
     dataset: Path,
     artifacts_dir: Path,
     concurrency: int,
@@ -82,18 +109,28 @@ def _execute(
     run_id = started_at.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
     cache = None if no_cache else ResponseCache(artifacts_dir / "cache.db")
+    judge_cost = 0.0
     try:
         results = asyncio.run(
             run_cases(cases, adapter, cache=cache, concurrency=concurrency)
         )
+        scores = [
+            score for case, result in zip(cases, results, strict=True)
+            for score in score_case(case, result)
+        ]
+        if judge is not None:
+            judge_scores, judge_cost = asyncio.run(
+                judge_all(cases, results, judge, cache=cache, concurrency=concurrency)
+            )
+            scores.extend(judge_scores)
     finally:
         if cache is not None:
             cache.close()
 
-    scores = [
-        score for case, result in zip(cases, results, strict=True)
-        for score in score_case(case, result)
-    ]
+    metrics = aggregate_metrics(results, scores)
+    if judge is not None:
+        metrics["judge_cost_usd"] = judge_cost
+        metrics["total_cost_usd"] = metrics.get("total_cost_usd", 0.0) + judge_cost
     return RunReport(
         run_id=run_id,
         started_at=started_at,
@@ -102,7 +139,7 @@ def _execute(
         target=adapter.name,
         results=results,
         scores=scores,
-        metrics=aggregate_metrics(results, scores),
+        metrics=metrics,
     )
 
 
