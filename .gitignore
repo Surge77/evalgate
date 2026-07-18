@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Env & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Test & type artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Run artifacts (generated per eval run)
+artifacts/
+runs.db
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.stackdump
