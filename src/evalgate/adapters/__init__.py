@@ -1,0 +1,6 @@
+"""Target adapters: bridge between evalgate cases and the system under eval."""
+
+from evalgate.adapters.base import Adapter
+from evalgate.adapters.callable import CallableAdapter
+
+__all__ = ["Adapter", "CallableAdapter"]
