@@ -1,4 +1,4 @@
-"""Thin LLM provider interface — the stub point for all tests."""
+"""Provider protocol, shared types, and the default Anthropic judge."""
 
 import os
 from dataclasses import dataclass
@@ -40,6 +40,12 @@ def compute_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float
         return 0.0
     input_price, output_price = pricing
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+
+
+def as_int(value: object) -> int:
+    """Coerce an unknown JSON value to int, defaulting to 0 — shared by the
+    envelope/response parsers of the non-Anthropic providers."""
+    return value if isinstance(value, int) else 0
 
 
 class AnthropicProvider:

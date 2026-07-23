@@ -42,8 +42,8 @@ returning `str` or an `AgentResult`) or an `http(s)://` URL that accepts
 | Full offline run wall time | **1.3 s** (rule checks only, no cache) | timed CLI run |
 | Offline run cost | **$0.00** | no LLM calls on the rule-check path |
 | Gate blocks seeded regression | **yes** — sabotaged target drops accuracy 0.8667 → 0.0, `evalgate gate` exits 1 | verified locally; covered by `tests/test_cli.py` |
-| Judge–human agreement | **pending live run** — see Calibration below | requires `ANTHROPIC_API_KEY` |
-| Judge cost per full run | **pending live run** (estimate ≈ $0.35 for 60 cases on `claude-opus-4-8`) | reported as `judge_cost_usd` in run metrics |
+| Judge–human agreement | **92.2%** over 90 labels, ±1 tol (faithfulness 93.3%, correctness 83.3%, relevance 100%) | `evalgate calibrate` on run `20260723-180055`, `groq` judge |
+| Judge cost per full run | **$0.00** — free-tier `groq` judge, 60 cases judged in 1m46s | `judge_cost_usd` in run metrics |
 
 ## The judge
 
@@ -51,15 +51,16 @@ Rule checks catch wrong answers; they cannot catch *ungrounded* ones. Four of th
 target's seeded flaws pass every rule check while inventing facts absent from the
 context — only the judge's **faithfulness** dimension catches them.
 
-The judge (pinned `claude-opus-4-8`, 30 s timeout) scores **faithfulness**,
-**correctness**, and **relevance** 1–5, normalized to 0–1. Responses are cached by
-content hash of (provider, model, prompt version, case, answer) — re-scoring an
-unchanged pair never re-calls the LLM.
+The judge scores **faithfulness**, **correctness**, and **relevance** 1–5, normalized to
+0–1, via a pluggable provider: `anthropic` (pinned `claude-opus-4-8`), `groq` and `gemini`
+(free-tier, JSON-mode, temperature 0), or `claude-cli` (your local Claude Code auth — no
+API key). Responses are cached by content hash of (provider, model, prompt version, case,
+answer) — re-scoring an unchanged pair never re-calls the LLM.
 
 ```sh
-# needs ANTHROPIC_API_KEY in the environment or .env
+# pick a judge backend; each reads its own key from the environment or .env
 evalgate run --target examples.demo_target:answer \
-  --dataset datasets/golden/golden_v1.jsonl --judge-provider anthropic
+  --dataset datasets/golden/golden_v1.jsonl --judge-provider groq
 ```
 
 ### Calibration
@@ -72,6 +73,10 @@ construction ground truth — the flaw set is known by design). After a judged r
 evalgate calibrate datasets/calibration/labels_v1.jsonl
 # → per-dimension agreement + overall %, tolerance ±1 on the 1-5 scale
 ```
+
+Measured (2026-07-23, `groq` judge `llama-3.3-70b-versatile`, run `20260723-180055`):
+**92.2% agreement** over 90 labels — faithfulness 93.3%, correctness 83.3%, relevance
+100% — clearing the ≥85% bar set in the plan.
 
 ## The gate
 
@@ -122,14 +127,14 @@ properties), `numeric_tolerance` (any number in the output within `tolerance`),
 
 ## Stack
 
-Python 3.11+ · Pydantic v2 · Typer · httpx · Anthropic SDK (judge) · SQLite · rich
+Python 3.11+ · Pydantic v2 · Typer · httpx · Anthropic SDK + Groq/Gemini/claude-cli judges · SQLite · rich
 
 ## Development
 
 ```sh
 python -m venv .venv
 pip install -r requirements.txt -r requirements-dev.txt -e .
-pytest          # 163 tests, no network; scorers and gate at 100% coverage
+pytest          # 187 tests, no network; scorers and gate at 100% coverage
 pyright         # strict
 ```
 

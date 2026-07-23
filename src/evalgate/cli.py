@@ -17,7 +17,13 @@ from evalgate.adapters.http import HttpAdapter
 from evalgate.cache import ResponseCache
 from evalgate.cli_report import DEFAULT_ARTIFACTS, console
 from evalgate.loader import DatasetError, load_dataset
-from evalgate.providers import AnthropicProvider, Provider
+from evalgate.providers import (
+    AnthropicProvider,
+    ClaudeCliProvider,
+    GeminiProvider,
+    GroqProvider,
+    Provider,
+)
 from evalgate.report import aggregate_metrics
 from evalgate.runner import run_cases
 from evalgate.schemas import Case, RunReport
@@ -59,7 +65,9 @@ def run(
     judge_provider: Annotated[
         str | None,
         typer.Option(
-            help="LLM judge: 'anthropic' or a 'module:attr' Provider spec"
+            help="LLM judge: 'anthropic', 'claude-cli' (uses Claude Code auth, no API key), "
+            "'gemini' (free-tier, GEMINI_API_KEY), 'groq' (free-tier, GROQ_API_KEY), "
+            "or a 'module:attr' Provider spec"
         ),
     ] = None,
 ) -> None:
@@ -104,6 +112,12 @@ def _load_judge_provider(spec: str | None) -> Provider | None:
         return None
     if spec == "anthropic":
         return AnthropicProvider()
+    if spec == "claude-cli":
+        return ClaudeCliProvider()
+    if spec == "gemini":
+        return GeminiProvider()
+    if spec == "groq":
+        return GroqProvider()
     module_path, _, attr = spec.partition(":")
     if not module_path or not attr:
         raise ValueError(f"invalid judge provider spec {spec!r}, expected 'module:attr'")
