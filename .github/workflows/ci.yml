@@ -17,5 +17,10 @@ jobs:
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - uses: jakebailey/pyright-action@v2
         with:
-          version: 1.1.403
+          version: 1.1.411
       - run: pytest
+      - name: eval regression gate
+        run: |
+          pip install -e .
+          python -m evalgate.cli run --target examples.demo_target:answer --dataset datasets/golden/golden_v1.jsonl --no-cache
+          python -m evalgate.cli gate
